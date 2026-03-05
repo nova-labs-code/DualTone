@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stereo Audio Mixer with Remove</title>
+<title>Stereo Audio Mixer - Saved</title>
 
 <style>
 body {
@@ -19,7 +19,6 @@ body {
 }
 h1 { color: #00d8ff; text-shadow: 0 0 8px #00d8ff33; text-align: center; }
 p { text-align: center; opacity: 0.75; max-width: 480px; line-height: 1.5; }
-
 input, button {
   width: 100%;
   max-width: 360px;
@@ -28,10 +27,8 @@ input, button {
   border: none;
   cursor: pointer;
 }
-
 input[type="file"] { background: #1e1e26; color: #fff; border: 1px solid #444; }
 input[type="file"]:hover { border-color: #00d8ff; }
-
 button {
   background: linear-gradient(135deg,#00d8ff,#ff4ec8);
   color: #fff;
@@ -40,31 +37,15 @@ button {
   transition: transform 0.15s, box-shadow 0.15s;
 }
 button:hover { transform: translateY(-2px); box-shadow:0 6px 16px rgba(0,0,0,0.5); }
-
-.channels {
-  display: flex;
-  justify-content: space-between;
-  width: 100%;
-  max-width: 360px;
-  font-weight: bold;
-  font-size: 0.95rem;
-}
+.channels { display: flex; justify-content: space-between; width: 100%; max-width: 360px; font-weight: bold; font-size: 0.95rem; }
 .left { color: #00d8ff; }
 .right { color: #ff4ec8; }
-
 .status { font-size: 0.9rem; opacity:0.8; text-align:center; max-width:360px; }
-
 .file-list { display:flex; flex-direction:column; gap:0.5rem; width:100%; max-width:360px; }
-.file-card {
-  display:flex; justify-content:space-between; align-items:center;
-  padding:0.6rem 1rem; border-radius:12px; background:#1e1e26; transition:background 0.2s;
-}
+.file-card { display:flex; justify-content:space-between; align-items:center; padding:0.6rem 1rem; border-radius:12px; background:#1e1e26; transition:background 0.2s; }
 .file-card:hover { background:#272733; }
 .file-card span { font-size:0.9rem; opacity:0.9; }
-.remove-btn {
-  background:#ff4e4e; border:none; border-radius:6px; color:#fff; padding:0.25rem 0.6rem;
-  cursor:pointer; font-size:0.8rem; transition: transform 0.15s;
-}
+.remove-btn { background:#ff4e4e; border:none; border-radius:6px; color:#fff; padding:0.25rem 0.6rem; cursor:pointer; font-size:0.8rem; transition: transform 0.15s; }
 .remove-btn:hover { transform: scale(1.1); }
 </style>
 </head>
@@ -72,7 +53,7 @@ button:hover { transform: translateY(-2px); box-shadow:0 6px 16px rgba(0,0,0,0.5
 <body>
 
 <h1>🎧 Stereo Audio Mixer</h1>
-<p>Select audio files, press Play. You can remove any file before playing. Headphones recommended.</p>
+<p>Select audio files, press Play. Files are saved in browser storage and removable.</p>
 
 <input type="file" id="fileInput" multiple>
 <button id="playBtn">Play Random Pair</button>
@@ -82,27 +63,73 @@ button:hover { transform: translateY(-2px); box-shadow:0 6px 16px rgba(0,0,0,0.5
   <span class="right">Right ▶</span>
 </div>
 
-<div class="status" id="status">No files loaded</div>
+<div class="status" id="status">Loading saved files...</div>
 <div class="file-list" id="fileList"></div>
 
 <script>
 let audioContext;
-let files = [];
+let files = []; // in-memory
 let current = [];
+let db;
 
-function initAudio() {
-  if(!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+// ----- IndexedDB -----
+const request = indexedDB.open("stereoAudioDB",1);
+request.onupgradeneeded = e=>{
+  db = e.target.result;
+  db.createObjectStore("audio", { autoIncrement:true });
+};
+request.onsuccess = e=>{
+  db = e.target.result;
+  loadStoredFiles();
+};
+
+// ----- Load stored files -----
+function loadStoredFiles(){
+  const tx = db.transaction("audio","readonly");
+  const store = tx.objectStore("audio");
+  const req = store.getAll();
+  req.onsuccess = ()=>{
+    files = req.result;
+    updateFileList();
+    document.getElementById("status").textContent = files.length + " file(s) loaded";
+  };
+}
+
+// ----- Save new files -----
+function saveFilesToDB(newFiles){
+  const tx = db.transaction("audio","readwrite");
+  const store = tx.objectStore("audio");
+  newFiles.forEach(f=>store.add(f));
+}
+
+// ----- Remove file -----
+function removeFile(index){
+  const tx = db.transaction("audio","readwrite");
+  const store = tx.objectStore("audio");
+  const keyReq = store.getAllKeys();
+  keyReq.onsuccess = ()=>{
+    const key = keyReq.result[index];
+    store.delete(key);
+    files.splice(index,1);
+    updateFileList();
+    document.getElementById("status").textContent = files.length + " file(s) loaded";
+  };
+}
+
+// ----- Audio -----
+function initAudio(){ 
+  if(!audioContext) audioContext = new (window.AudioContext||window.webkitAudioContext)();
   if(audioContext.state==="suspended") audioContext.resume();
 }
 
-function stopAll() {
+function stopAll(){
   current.forEach(a=>{try{a.pause(); a.src="";}catch{}});
-  current = [];
+  current=[];
 }
 
-function playFile(file, panValue) {
+function playFile(file, panValue){
   const audio=document.createElement("audio");
-  audio.src = URL.createObjectURL(file);
+  audio.src=URL.createObjectURL(file);
   audio.loop=false;
   audio.playsInline=true;
   const source=audioContext.createMediaElementSource(audio);
@@ -113,9 +140,12 @@ function playFile(file, panValue) {
   current.push(audio);
 }
 
-function updateFileList() {
-  const list = document.getElementById("fileList");
-  list.innerHTML="";
+// ----- UI -----
+const status=document.getElementById("status");
+const fileList=document.getElementById("fileList");
+
+function updateFileList(){
+  fileList.innerHTML="";
   files.forEach((f,i)=>{
     const card=document.createElement("div");
     card.className="file-card";
@@ -124,26 +154,30 @@ function updateFileList() {
     const remove=document.createElement("button");
     remove.className="remove-btn";
     remove.textContent="Remove";
-    remove.onclick=()=>{files.splice(i,1); updateFileList(); document.getElementById("status").textContent = files.length+" file(s) loaded";};
-    card.appendChild(name); card.appendChild(remove); list.appendChild(card);
+    remove.onclick=()=>removeFile(i);
+    card.appendChild(name);
+    card.appendChild(remove);
+    fileList.appendChild(card);
   });
 }
 
-const status=document.getElementById("status");
-
-document.getElementById("fileInput").addEventListener("change",e=>{
-  files = files.concat(Array.from(e.target.files));
-  status.textContent = files.length + " file(s) loaded";
+// ----- File input -----
+document.getElementById("fileInput").addEventListener("change", e=>{
+  const newFiles = Array.from(e.target.files);
+  files = files.concat(newFiles);
+  saveFilesToDB(newFiles);
   updateFileList();
+  status.textContent = files.length + " file(s) loaded";
 });
 
+// ----- Play button -----
 document.getElementById("playBtn").addEventListener("click",()=>{
   initAudio();
   if(files.length<2){status.textContent="Add at least 2 files"; return;}
   stopAll();
-  const shuffled=files.sort(()=>Math.random()-0.5);
-  playFile(shuffled[0], -1);
-  playFile(shuffled[1], 1);
+  const shuffled = files.sort(()=>Math.random()-0.5);
+  playFile(shuffled[0],-1);
+  playFile(shuffled[1],1);
   status.textContent=`Playing: ${shuffled[0].name} ◀ | ▶ ${shuffled[1].name}`;
 });
 </script>
