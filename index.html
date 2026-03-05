@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stereo Audio Mixer</title>
+
+<style>
+/* ----- Global ----- */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  background: #121212;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  padding: 2rem;
+  gap: 1.5rem;
+  transition: background 0.3s;
+}
+
+h1 {
+  font-size: 1.8rem;
+  margin-bottom: 0.25rem;
+  text-align: center;
+  color: #00d8ff;
+  text-shadow: 0 0 8px #00d8ff33;
+}
+
+p {
+  text-align: center;
+  max-width: 480px;
+  opacity: 0.75;
+  line-height: 1.5;
+}
+
+/* ----- File Input & Buttons ----- */
+input[type="file"] {
+  padding: 0.8rem;
+  border-radius: 10px;
+  border: 1px solid #444;
+  background: #1e1e26;
+  color: #fff;
+  width: 100%;
+  max-width: 360px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+input[type="file"]:hover {
+  border-color: #00d8ff;
+}
+
+button {
+  padding: 0.8rem 1.2rem;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, #00d8ff, #ff4ec8);
+  color: #fff;
+  font-weight: bold;
+  width: 100%;
+  max-width: 360px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.5);
+}
+
+/* ----- Channels Indicator ----- */
+.channels {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 360px;
+  font-weight: bold;
+  font-size: 0.95rem;
+}
+
+.left { color: #00d8ff; }
+.right { color: #ff4ec8; }
+
+/* ----- Status ----- */
+.status {
+  font-size: 0.9rem;
+  opacity: 0.8;
+  text-align: center;
+  word-break: break-word;
+  max-width: 360px;
+}
+
+/* ----- File Cards ----- */
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 360px;
+}
+
+.file-card {
+  padding: 0.6rem 1rem;
+  border-radius: 12px;
+  background: #1e1e26;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: background 0.2s;
+}
+
+.file-card:hover {
+  background: #272733;
+}
+
+.file-card span {
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+</style>
+</head>
+
+<body>
+
+<h1>🎧 Stereo Audio Mixer</h1>
+<p>Select audio files and press Play. Two random tracks will play simultaneously — one in the left ear, one in the right. Headphones recommended.</p>
+
+<input type="file" id="fileInput" multiple>
+<button id="playBtn">Play Random Pair</button>
+
+<div class="channels">
+  <span class="left">◀ Left</span>
+  <span class="right">Right ▶</span>
+</div>
+
+<div class="status" id="status">No files loaded</div>
+
+<div class="file-list" id="fileList"></div>
+
+<script>
+let audioContext;
+let files = [];
+let current = [];
+
+function initAudio() {
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioContext.state === "suspended") audioContext.resume();
+}
+
+function stopAll() {
+  current.forEach(a => {
+    try { a.pause(); a.src = ""; } catch {}
+  });
+  current = [];
+}
+
+function playFile(file, panValue) {
+  const audio = document.createElement("audio");
+  audio.src = URL.createObjectURL(file);
+  audio.loop = false;
+  audio.playsInline = true;
+
+  const source = audioContext.createMediaElementSource(audio);
+  const panner = audioContext.createStereoPanner();
+  panner.pan.value = panValue;
+
+  source.connect(panner).connect(audioContext.destination);
+  audio.play();
+
+  current.push(audio);
+}
+
+/* ---------- UI ---------- */
+const status = document.getElementById("status");
+const fileList = document.getElementById("fileList");
+
+document.getElementById("fileInput").addEventListener("change", e => {
+  files = Array.from(e.target.files);
+  status.textContent = `${files.length} file(s) loaded`;
+
+  // Display files in a card list
+  fileList.innerHTML = "";
+  files.forEach(f => {
+    const card = document.createElement("div");
+    card.className = "file-card";
+    const name = document.createElement("span");
+    name.textContent = f.name;
+    card.appendChild(name);
+    fileList.appendChild(card);
+  });
+});
+
+document.getElementById("playBtn").addEventListener("click", () => {
+  initAudio();
+  if (files.length < 2) {
+    status.textContent = "Add at least 2 files";
+    return;
+  }
+
+  stopAll();
+
+  const shuffled = files.sort(() => Math.random() - 0.5);
+  playFile(shuffled[0], -1);
+  playFile(shuffled[1], 1);
+
+  status.textContent = `Playing: ${shuffled[0].name} ◀ | ▶ ${shuffled[1].name}`;
+});
+</script>
+
+</body>
+</html>
